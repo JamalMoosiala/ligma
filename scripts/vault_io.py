@@ -6,9 +6,12 @@ Handles everything that touches disk under vault/:
     vault/raw/<SYMBOL>/JSON-DD-MM-YYYY.json.gz   -- one growing file per
         symbol per day; each fetch cycle appends one more entry to a list
         inside the (re-written) gzip file.
-    vault/tables/MAIN-DD-MM-YYYY.csv             -- one growing file per
-        day, all symbols combined, one row per strike/expiry/option-type
-        per fetch cycle.
+    vault/tables/<SYMBOL>/MAIN-DD-MM-YYYY.csv    -- one growing file per
+        symbol per day, one row per strike/expiry/option-type per fetch
+        cycle. Each symbol gets its OWN file -- this used to be merged
+        into a single shared daily file across all symbols, which was
+        wrong; fixed so tables mirror the same per-symbol structure as
+        the raw archives.
 
 Also owns the freshness check that runs before anything gets written --
 a bad/empty NSE response should never silently pollute the archive.
@@ -43,8 +46,13 @@ CSV_COLUMNS = [
     "change_in_oi",
     "total_traded_volume",
     "pchange_vs_prev_close",
+    # nse_iv is now the ONLY IV column -- the in-house solved IV
+    # (formerly "computed_iv") was dropped: it added little value once
+    # NSE's own published IV was confirmed available, and it was also the
+    # thing most distorted by the near-expiry cost-of-carry instability
+    # that motivated switching the dividend-yield source (see run_fetch.py
+    # get_dividend_yield_and_carry() and the README's data-source history).
     "nse_iv",
-    "computed_iv",
     "delta", "gamma", "theta", "vega",
     "vanna", "charm", "vomma",
     "speed", "zomma", "color", "veta",
@@ -135,14 +143,17 @@ def append_raw_snapshot(symbol: str, day, snapshot: dict):
 
 
 # ---------------------------------------------------------------------------
-# MAIN table (combined, all symbols, one file per day)
+# MAIN table -- one file per SYMBOL per day (mirrors the raw/ folder
+# structure). This used to be one shared file across all symbols per day;
+# fixed per explicit requirement that each symbol gets its own file.
 # ---------------------------------------------------------------------------
 
-def append_main_rows(day, rows: list):
+def append_main_rows(symbol: str, day, rows: list):
     if not rows:
         return
-    os.makedirs(TABLES_DIR, exist_ok=True)
-    out_path = os.path.join(TABLES_DIR, f"MAIN-{date_stamp(day)}.csv")
+    out_dir = os.path.join(TABLES_DIR, symbol)
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"MAIN-{date_stamp(day)}.csv")
 
     file_exists = os.path.isfile(out_path)
     with open(out_path, "a", newline="") as f:
@@ -151,4 +162,4 @@ def append_main_rows(day, rows: list):
             writer.writeheader()
         writer.writerows(rows)
 
-    print(f"  MAIN table updated -> {out_path} (+{len(rows)} rows)")
+    print(f"  [{symbol}] MAIN table updated -> {out_path} (+{len(rows)} rows)")

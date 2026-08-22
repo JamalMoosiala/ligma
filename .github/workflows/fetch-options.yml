@@ -3,15 +3,25 @@ name: Fetch NSE Option Chain to Vault
 on:
   schedule:
     # Cron is UTC. IST = UTC+5:30, market hours 09:15-15:30 IST.
-    # 09:15 IST = 03:45 UTC, 15:30 IST = 10:00 UTC. Every 5 min, Mon-Fri.
-    # GitHub's scheduler is best-effort (can drift a few minutes under
-    # load) -- the script logs its own true fetch timestamp on every row,
-    # so analysis should always key off that column, not this schedule.
+    # 09:15 IST = 03:45 UTC, 15:30 IST = 10:00 UTC.
+    #
+    # CHANGED from every-5-min to every-15-min after observing a large gap
+    # between configured and actual trigger frequency: GitHub Actions
+    # Performance Metrics showed only 37 job runs in a period where a
+    # 5-minute schedule should have produced roughly 1000+. The jobs
+    # themselves ran fast and reliably (avg 56s run time, 3% failure rate)
+    # -- this isn't the code being slow, it's GitHub's scheduler not
+    # firing anywhere near as often as configured. This is a known,
+    # documented GitHub Actions limitation: scheduled triggers are
+    # best-effort and can be delayed or dropped under load, especially at
+    # high density. Testing whether a coarser interval fires more
+    # reliably before considering alternatives (e.g. scheduling via the
+    # Pi's own cron instead of GitHub's).
+    - cron: "45 3 * * 1-5"
+    - cron: "0,15,30,45 4-9 * * 1-5"
+    - cron: "0 10 * * 1-5"
     # Weekday/holiday filtering ALSO happens inside the script itself
     # (holidays.py) as a second line of defense independent of this cron.
-    - cron: "45,50,55 3 * * 1-5"
-    - cron: "*/5 4-9 * * 1-5"
-    - cron: "0,5,10,15,20,25,30 10 * * 1-5"
   workflow_dispatch: {}   # manual trigger from the Actions tab, for testing
 
 permissions:
